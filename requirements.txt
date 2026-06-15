@@ -1,0 +1,8 @@
+mne
+numpy
+scipy
+pandas
+matplotlib
+openpyxl
+ipykernel
+jupyter

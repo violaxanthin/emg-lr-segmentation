@@ -1,0 +1,22 @@
+# Python / Jupyter
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+*.nbconvert.ipynb
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Data
+data/raw/
+data/interim/
+data/processed/
+
+# Outputs
+outputs/figures/
+outputs/temp/
+
+# System
+.DS_Store

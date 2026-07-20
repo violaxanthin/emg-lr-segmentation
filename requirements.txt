@@ -6,3 +6,6 @@ matplotlib
 openpyxl
 ipykernel
 jupyter
+PyQt6
+mne-qt-browser
+pyqtgraph

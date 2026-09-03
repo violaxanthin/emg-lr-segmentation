@@ -1,0 +1,280 @@
+{
+  "method": "median_plus_3_scaled_mad",
+  "components": {
+    "er": {
+      "polarity": 1,
+      "n": 24,
+      "metrics": {
+        "start_latency_ms": {
+          "median": 12.751464843773874,
+          "scaled_mad": 1.1155696288833268,
+          "lower": 9.404755957123893,
+          "upper": 16.098173730423856
+        },
+        "peak_latency_ms": {
+          "median": 14.13012695311977,
+          "scaled_mad": 1.1162935546989614,
+          "lower": 10.781246289022885,
+          "upper": 17.479007617216656
+        },
+        "end_latency_ms": {
+          "median": 14.131835937490678,
+          "scaled_mad": 1.1146647216769907,
+          "lower": 10.787841772459705,
+          "upper": 17.47583010252165
+        },
+        "duration_ms": {
+          "median": 1.4999999999645297,
+          "scaled_mad": 0.3706500000755113,
+          "lower": 0.3880499997379958,
+          "upper": 2.6119500001910634
+        },
+        "peak_width_ms": {
+          "median": 0.6347224282626203,
+          "scaled_mad": 0.3210559814233739,
+          "lower": 0.0,
+          "upper": 1.597890372532742
+        },
+        "absolute_peak_amplitude": {
+          "median": 0.3158593736588955,
+          "scaled_mad": 0.24671391674391924,
+          "lower": 0.0,
+          "upper": 1.0560011238906533
+        },
+        "p2p_amplitude": {
+          "median": 0.08609376102685928,
+          "scaled_mad": 0.055597513255476946,
+          "lower": 0.0,
+          "upper": 0.2528863007932901
+        },
+        "prominence": {
+          "median": 0.037343740463256836,
+          "scaled_mad": 0.04331970505267382,
+          "lower": 0.0,
+          "upper": 0.16730285562127828
+        },
+        "auc_abs": {
+          "median": 0.35251953662373126,
+          "scaled_mad": 0.27743731446604,
+          "lower": 0.0,
+          "upper": 1.1848314800218511
+        },
+        "rms": {
+          "median": 0.30125474612426406,
+          "scaled_mad": 0.24570060985537406,
+          "lower": 0.0,
+          "upper": 1.0383565756903863
+        },
+        "amplitude_noise_ratio": {
+          "median": 3.1788830240954242,
+          "scaled_mad": 2.397553419812646,
+          "lower": 0.0,
+          "upper": 10.371543283533363
+        },
+        "p2p_noise_ratio": {
+          "median": 0.7664321979365089,
+          "scaled_mad": 0.4856231998097549,
+          "lower": 0.0,
+          "upper": 2.2233017973657736
+        },
+        "prominence_noise_ratio": {
+          "median": 0.3576609138021722,
+          "scaled_mad": 0.3756165622476809,
+          "lower": 0.0,
+          "upper": 1.484510600545215
+        }
+      }
+    },
+    "mr": {
+      "polarity": -1,
+      "n": 23,
+      "metrics": {
+        "start_latency_ms": {
+          "median": 17.255126953102717,
+          "scaled_mad": 1.482599999964941,
+          "lower": 12.807326953207895,
+          "upper": 21.70292695299754
+        },
+        "peak_latency_ms": {
+          "median": 18.50268554687773,
+          "scaled_mad": 0.7536067382583269,
+          "lower": 16.241865332102748,
+          "upper": 20.76350576165271
+        },
+        "end_latency_ms": {
+          "median": 20.0026855468991,
+          "scaled_mad": 1.1155696288833268,
+          "lower": 16.65597666024912,
+          "upper": 23.349394433549083
+        },
+        "duration_ms": {
+          "median": 2.999999999985903,
+          "scaled_mad": 0.7412999999824705,
+          "lower": 0.7761000000384914,
+          "upper": 5.223899999933314
+        },
+        "peak_width_ms": {
+          "median": 1.2514710294461222,
+          "scaled_mad": 0.5581559482568208,
+          "lower": 0.0,
+          "upper": 2.925938874216585
+        },
+        "absolute_peak_amplitude": {
+          "median": 1.7612499967217445,
+          "scaled_mad": 0.6250086181730031,
+          "lower": 0.0,
+          "upper": 3.636275851240754
+        },
+        "p2p_amplitude": {
+          "median": 0.40843749046325684,
+          "scaled_mad": 0.2515787016391754,
+          "lower": 0.0,
+          "upper": 1.163173595380783
+        },
+        "prominence": {
+          "median": 0.17812514305114746,
+          "scaled_mad": 0.12185141372680663,
+          "lower": 0.0,
+          "upper": 0.5436793842315674
+        },
+        "auc_abs": {
+          "median": 3.1576953269541264,
+          "scaled_mad": 1.6865733269099146,
+          "lower": 0.0,
+          "upper": 8.21741530768387
+        },
+        "rms": {
+          "median": 1.5729807504523006,
+          "scaled_mad": 0.6683010850972052,
+          "lower": 0.0,
+          "upper": 3.577884005743916
+        },
+        "amplitude_noise_ratio": {
+          "median": 15.421622903445241,
+          "scaled_mad": 6.796027724979162,
+          "lower": 0.0,
+          "upper": 35.809706078382725
+        },
+        "p2p_noise_ratio": {
+          "median": 3.5719141870811653,
+          "scaled_mad": 2.610263222206106,
+          "lower": 0.0,
+          "upper": 11.402703853699485
+        },
+        "prominence_noise_ratio": {
+          "median": 1.6393872441255,
+          "scaled_mad": 1.312158516185465,
+          "lower": 0.0,
+          "upper": 5.575862792681894
+        }
+      }
+    },
+    "lr": {
+      "polarity": 1,
+      "n": 35,
+      "metrics": {
+        "start_latency_ms": {
+          "median": 29.26098632809726,
+          "scaled_mad": 5.192719628871191,
+          "lower": 13.682827441483688,
+          "upper": 44.83914521471083
+        },
+        "peak_latency_ms": {
+          "median": 29.74682617190183,
+          "scaled_mad": 5.547443261761225,
+          "lower": 13.104496386618155,
+          "upper": 56.989746093734084
+        },
+        "end_latency_ms": {
+          "median": 31.7551269531009,
+          "scaled_mad": 4.442732519522485,
+          "lower": 18.426929394533445,
+          "upper": 45.08332451166835
+        },
+        "duration_ms": {
+          "median": 2.999999999985903,
+          "scaled_mad": 2.223899999947412,
+          "lower": 0.0,
+          "upper": 9.671699999828139
+        },
+        "peak_width_ms": {
+          "median": 0.875,
+          "scaled_mad": 0.40128135607219717,
+          "lower": 0.0,
+          "upper": 2.0788440682165916
+        },
+        "absolute_peak_amplitude": {
+          "median": 0.3370312452316284,
+          "scaled_mad": 0.2390692429304123,
+          "lower": 0.0,
+          "upper": 1.0542389740228653
+        },
+        "p2p_amplitude": {
+          "median": 0.08250001072883606,
+          "scaled_mad": 0.0634738292902708,
+          "lower": 0.0,
+          "upper": 0.2729214985996485
+        },
+        "prominence": {
+          "median": 0.03812497854232788,
+          "scaled_mad": 0.04030816010534763,
+          "lower": 0.0,
+          "upper": 0.15904945885837077
+        },
+        "auc_abs": {
+          "median": 0.6775390733964741,
+          "scaled_mad": 0.6408191159226,
+          "lower": 0.0,
+          "upper": 2.599996421164274
+        },
+        "rms": {
+          "median": 0.2928223123305603,
+          "scaled_mad": 0.243181919954631,
+          "lower": 0.0,
+          "upper": 1.0223680721944532
+        },
+        "amplitude_noise_ratio": {
+          "median": 2.9656595770228753,
+          "scaled_mad": 2.200165514145833,
+          "lower": 0.0,
+          "upper": 9.566156119460373
+        },
+        "p2p_noise_ratio": {
+          "median": 0.6777335778520072,
+          "scaled_mad": 0.608751419787032,
+          "lower": 0.0,
+          "upper": 2.503987837213103
+        },
+        "prominence_noise_ratio": {
+          "median": 0.34215312709573226,
+          "scaled_mad": 0.35172074510354007,
+          "lower": 0.0,
+          "upper": 1.3973153624063526
+        }
+      }
+    }
+  },
+  "sequence": {
+    "er_to_mr_ms": {
+      "median": 4.9999999999954525,
+      "scaled_mad": 0.7412999999824705,
+      "lower": 2.776100000048041,
+      "upper": 7.223899999942864
+    },
+    "mr_to_lr_ms": {
+      "median": 12.499999999988631,
+      "scaled_mad": 5.189100000045846,
+      "lower": 0.0,
+      "upper": 42.49999999996135
+    }
+  },
+  "eligibility": {
+    "minimum_median_fraction": {
+      "er": 0.2,
+      "mr": 0.25,
+      "lr": 0.2
+    },
+    "maximum_robust_upper_multiplier": 1.5
+  },
+  "max_lr_per_stimulus": 3
+}

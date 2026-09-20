@@ -15,8 +15,7 @@ data/interim/
 data/processed/
 
 # Outputs
-outputs/figures/
-outputs/temp/
+outputs/
 
 # System
 .DS_Store

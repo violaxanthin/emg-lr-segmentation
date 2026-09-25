@@ -1,72 +1,165 @@
 # EMG Late Response Segmentation
 
-Analysis notebooks and helper code for detecting and reviewing early, middle,
-and late EMG responses around stimulation events.
+Notebook-first analysis pipeline for detecting, reviewing, and analyzing early,
+middle, and late EMG responses around stimulation events.
 
-## Overview
+The project started as exploratory notebooks and now keeps reusable analysis
+logic in `src/emg_lr_segmentation/`, while notebooks remain the main interface
+for running the workflow and reviewing signals interactively.
 
-This project works with continuous EMG recordings, identifies stimulation
-artifacts, builds response-locked epochs, and supports manual calibration and
-quality control of ER/MR/LR response candidates. The workflow is notebook-first,
-with reusable helper functions kept in Python modules where possible.
+## What This Project Does
 
-## Data
+- Loads continuous EMG recordings from FIF or MATLAB `.mat` files.
+- Detects stimulation events and response candidates.
+- Supports manual ER/MR/LR calibration and interactive review in the MNE Qt
+  browser.
+- Saves reviewed annotations, response metrics, calibration summaries, and QC
+  figures.
+- Relates reviewed responses to movement-cycle phase in the final analysis
+  notebook.
 
-Raw recordings are not included in this repository. Place local recordings under
-`data/raw/` when running the notebooks. The `data/raw/`, `data/interim/`, and
-`data/processed/` directories are ignored by Git.
-
-Generated analysis outputs are also excluded from Git. Notebooks may write
-annotations, metrics, JSON summaries, CSV tables, and figures under `outputs/`,
-but those files are treated as reproducible local artifacts.
-
-## Repository Structure
+## Repository Layout
 
 ```text
-notebooks/
-  emg_lr_segmentation.ipynb
-  emg_lr_segmentation_mat.ipynb
-  manual_calibrated_er_mr_lr.ipynb
-  movement_phase_analysis.ipynb
-  manual_calibrated_er_mr_lr.py
-  movement_phase_helpers.py
-requirements.txt
+.
+├── notebooks/
+│   ├── emg_lr_segmentation_1.ipynb
+│   ├── emg_lr_segmentation_mat_2.ipynb
+│   ├── manual_calibrated_er_mr_lr_3.ipynb
+│   ├── movement_phase_analysis_4.ipynb
+│   └── _archive/
+├── src/
+│   └── emg_lr_segmentation/
+│       ├── manual_calibrated_er_mr_lr.py
+│       └── movement_phase.py
+├── data/
+│   ├── raw/
+│   ├── interim/
+│   └── processed/
+├── outputs/
+│   ├── annotations/
+│   ├── figures/
+│   └── metrics/
+├── requirements.txt
+└── README.md
 ```
 
-The `_archive/` folder contains earlier notebook history. Local planning notes
-under `.local/` are not part of the public repository.
+`data/` and `outputs/` are local working directories. They are ignored by Git so
+large recordings and generated analysis artifacts do not get committed.
+
+## Workflow
+
+Run notebooks from the repository root so relative paths resolve correctly.
+
+1. `notebooks/emg_lr_segmentation_1.ipynb`
+   Original FIF-based exploration.
+
+2. `notebooks/emg_lr_segmentation_mat_2.ipynb`
+   MATLAB `.mat` recording workflow.
+
+3. `notebooks/manual_calibrated_er_mr_lr_3.ipynb`
+   Current manual-calibrated ER/MR/LR detection and review pipeline. This
+   notebook measures manual labels, calibrates candidate detection, opens the
+   MNE browser for review, and writes reviewed metrics/annotations.
+
+4. `notebooks/movement_phase_analysis_4.ipynb`
+   Final movement-phase analysis. This notebook uses reviewed ER/MR/LR results
+   and analyzes how responses relate to movement-cycle phase.
+
+The first two notebooks are useful historical/context notebooks. The active
+analysis path is usually notebooks 3 and 4.
+
+## Python Modules
+
+Reusable code lives under `src/emg_lr_segmentation/`.
+
+- `manual_calibrated_er_mr_lr.py`
+  Loading MATLAB recordings, extracting response metrics, building manual
+  calibration, detecting ER/MR/LR candidates, normalizing reviewed annotations,
+  and plotting reviewed epochs.
+
+- `movement_phase.py`
+  EMG envelope creation, movement phase extraction, phase binning, response
+  summary tables, latency outlier marking, and movement-phase plots.
+
+The notebooks add `src/` to `sys.path`, so editable package installation is not
+required for normal notebook use.
 
 ## Setup
 
-Create and activate a Python environment, then install the project dependencies:
+Create and activate a Python environment, then install dependencies:
 
 ```bash
+python -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-The notebooks use MNE's Qt browser for interactive signal review, so the
-requirements include `PyQt6`, `mne-qt-browser`, and `pyqtgraph`.
+The interactive review notebooks use MNE's Qt browser, so the environment needs
+Qt support. The required packages include `PyQt6`, `mne-qt-browser`, and
+`pyqtgraph`.
 
-## Usage
+## Recording Paths And Data
 
-Start with the notebook that matches the recording format you are analyzing:
+Raw recordings are not included in the repository. Place local recordings in:
 
-- `notebooks/emg_lr_segmentation_mat.ipynb` for the MATLAB recording workflow.
-- `notebooks/emg_lr_segmentation.ipynb` for the original FIF-based workflow.
-- `notebooks/manual_calibrated_er_mr_lr.ipynb` for manual ER/MR/LR calibration
-  and candidate review.
-- `notebooks/movement_phase_analysis.ipynb` for movement-cycle phase analysis.
+```text
+data/raw/
+```
 
-Run notebooks from the repository root so relative paths resolve consistently.
+or point the notebook directly to another local path.
+
+Each notebook has a config cell near the top with the recording path. Replace
+the placeholder path with your own recording file:
+
+```python
+# FIF workflow, notebook 1
+fif_path = Path("my_path/my_dir/my_recording.fif")
+
+# MATLAB workflows, notebooks 2-4
+mat_path = Path("my_path/my_dir/my_recording.mat")
+```
+
+Supported recording formats are:
+
+- `.fif` for `notebooks/emg_lr_segmentation_1.ipynb`
+- `.mat` for `notebooks/emg_lr_segmentation_mat_2.ipynb`,
+  `notebooks/manual_calibrated_er_mr_lr_3.ipynb`, and
+  `notebooks/movement_phase_analysis_4.ipynb`
+
+The active `.mat` workflow expects MATLAB files with the variables used by the
+loader: `data`, `datastart`, `dataend`, `titles`, and `samplerate`. If your
+recording uses different channel names, also update the channel settings in the
+same config cell.
 
 ## Outputs
 
-Generated files are written locally under `outputs/` and are intentionally not
-tracked. Recreate them by rerunning the relevant notebooks after placing the
-required source data in `data/raw/`.
+Generated files are written under:
 
-## Notes
+```text
+outputs/annotations/
+outputs/figures/
+outputs/metrics/
+```
 
-Some response-detection thresholds and review decisions are intentionally
-calibrated interactively from representative epochs. Keep notebook outputs clear
-before committing so repository diffs stay focused on source changes.
+Typical outputs include:
+
+- MNE annotation FIF files with reviewed ER/MR/LR labels.
+- CSV metric tables before and after review.
+- JSON calibration summaries.
+- QC figures for response detection and movement-phase analysis.
+
+These outputs are treated as reproducible local artifacts and are ignored by
+Git.
+
+## Interactive Review
+
+Some notebooks intentionally open an MNE Qt browser for manual review. Close the
+browser window to let the notebook continue.
+
+For the manual-calibrated pipeline, you can skip the interactive review step in
+automation by setting:
+
+```bash
+EMG_SKIP_INTERACTIVE_QC=1
+```

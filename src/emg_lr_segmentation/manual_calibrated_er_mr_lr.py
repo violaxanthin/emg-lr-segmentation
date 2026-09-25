@@ -806,7 +806,7 @@ def plot_best_epochs(
             for _, row in group[group["label"] == component].iterrows():
                 ax.axvspan(row.start_latency_ms, row.end_latency_ms, color=colors[component], alpha=0.2, label=component.upper() if plot_index == 0 else None)
                 ax.axvline(row.peak_latency_ms, color=colors[component], linewidth=0.8)
-        # Match emg_lr_segmentation.ipynb: each subplot is independently
+        # Match the original ER/LR notebook: each subplot is independently
         # autoscaled by Matplotlib. A large response in one epoch therefore does
         # not flatten the smaller responses in the other epochs.
         ax.axvline(right_ms, color="black", linestyle=":", linewidth=0.8)

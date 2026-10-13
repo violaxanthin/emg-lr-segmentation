@@ -440,3 +440,89 @@ def review_lr_and_tune_search(
     tuning.to_csv(tuning_path)
     return saved, metrics, tuning
 
+
+def calculate_lr_to_mr_p2p_ratio(
+    raw,
+    complete_annotations,
+    reviewed_annotations,
+    reviewed_lr_metrics,
+    channel,
+    project_root,
+):
+    """Calculate LR P2P / reviewed-MR P2P on the original analysis signal."""
+    if reviewed_lr_metrics.empty:
+        raise ValueError("No reviewed LR metrics are available")
+
+    signal = raw.get_data(picks=[channel])[0]
+    sfreq = float(raw.info["sfreq"])
+    descriptions = np.asarray(complete_annotations.description, dtype=str)
+    stimulus_times_s = np.asarray(
+        complete_annotations.onset[descriptions == "Stimulus_Auto"], dtype=float
+    )
+    mr_mask = descriptions == "mr_auto"
+    mr_onsets = np.asarray(complete_annotations.onset[mr_mask], dtype=float)
+    mr_durations = np.asarray(complete_annotations.duration[mr_mask], dtype=float)
+    mr_indices = np.searchsorted(stimulus_times_s, mr_onsets, side="right") - 1
+
+    mr_p2p_by_stimulus = {}
+    for stimulus_index in sorted(set(mr_indices.astype(int))):
+        rows = np.flatnonzero(mr_indices == stimulus_index)
+        if stimulus_index < 0 or len(rows) != 1:
+            continue
+        row = int(rows[0])
+        start = max(0, int(round(mr_onsets[row] * sfreq)))
+        end = min(
+            len(signal),
+            int(round((mr_onsets[row] + mr_durations[row]) * sfreq)),
+        )
+        if end > start:
+            mr_p2p_by_stimulus[int(stimulus_index)] = float(
+                np.ptp(signal[start:end])
+            )
+
+    reviewed_descriptions = np.asarray(reviewed_annotations.description, dtype=str)
+    lr_mask = reviewed_descriptions == "lr_auto"
+    lr_onsets = np.asarray(reviewed_annotations.onset[lr_mask], dtype=float)
+    lr_durations = np.asarray(reviewed_annotations.duration[lr_mask], dtype=float)
+    ratio_rows = []
+    unavailable_stimuli = set()
+    for source_index, (onset, duration) in enumerate(zip(lr_onsets, lr_durations)):
+        stimulus_index = int(np.searchsorted(stimulus_times_s, onset, side="right") - 1)
+        start = max(0, int(round(onset * sfreq)))
+        end = min(len(signal), int(round((onset + duration) * sfreq)))
+        mr_p2p = mr_p2p_by_stimulus.get(stimulus_index, np.nan)
+        lr_p2p = float(np.ptp(signal[start:end])) if end > start else np.nan
+        ratio = (
+            lr_p2p / mr_p2p
+            if np.isfinite(lr_p2p)
+            and np.isfinite(mr_p2p)
+            and mr_p2p > np.finfo(float).eps
+            else np.nan
+        )
+        if not np.isfinite(ratio):
+            unavailable_stimuli.add(stimulus_index)
+        ratio_rows.append(
+            {
+                "source_index": source_index,
+                "mr_p2p_amplitude": mr_p2p,
+                "lr_p2p_amplitude": lr_p2p,
+                "lr_to_mr_p2p_ratio": ratio,
+            }
+        )
+
+    enriched = reviewed_lr_metrics.merge(
+        pd.DataFrame(ratio_rows),
+        on="source_index",
+        how="left",
+        validate="one_to_one",
+    )
+    if unavailable_stimuli:
+        print(
+            "LR/MR P2P ratio unavailable for stimulus indices:",
+            sorted(unavailable_stimuli),
+        )
+    output_dir = Path(project_root) / "outputs/metrics"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    enriched.to_csv(output_dir / "notebook4_lr_mr_p2p_ratio_metrics.csv", index=False)
+    return enriched
+

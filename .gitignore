@@ -17,5 +17,8 @@ data/processed/
 # Outputs
 outputs/
 
+# Temporary render artifacts
+tmp/
+
 # System
 .DS_Store

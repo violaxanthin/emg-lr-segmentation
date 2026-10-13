@@ -290,9 +290,14 @@ def _strongest_lr_per_stimulus(reviewed_metrics):
     subset = reviewed_metrics.loc[reviewed_metrics["label"].eq("lr")].copy()
     if subset.empty:
         return subset
-    sort_cols = ["stimulus_index", "prominence", "absolute_peak_amplitude", "peak_latency_ms"]
+    sort_cols = ["stimulus_index", "p2p_amplitude", "prominence", "peak_latency_ms"]
     ascending = [True, False, False, True]
-    return subset.sort_values(sort_cols, ascending=ascending).groupby("stimulus_index", as_index=False).first()
+    return (
+        subset.sort_values(sort_cols, ascending=ascending)
+        .groupby("stimulus_index", as_index=False, group_keys=False)
+        .head(1)
+        .reset_index(drop=True)
+    )
 
 
 def build_response_by_stim(

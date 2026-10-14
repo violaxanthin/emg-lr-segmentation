@@ -540,15 +540,19 @@ def _component_candidates(
             continue
         if eligibility:
             fraction = float(eligibility["minimum_median_fraction"][label])
-            upper_multiplier = float(eligibility["maximum_robust_upper_multiplier"])
+            upper_setting = eligibility.get("maximum_robust_upper_multiplier")
+            upper_multiplier = None if upper_setting is None else float(upper_setting)
             p2p = component["metrics"]["p2p_amplitude"]
             prominence = component["metrics"]["prominence"]
             significant = (
                 candidate["p2p_amplitude"] >= fraction * p2p["median"]
                 and candidate["prominence"] >= fraction * prominence["median"]
-                and candidate["p2p_amplitude"] <= upper_multiplier * p2p["upper"]
-                and candidate["prominence"] <= upper_multiplier * prominence["upper"]
             )
+            if upper_multiplier is not None:
+                significant &= (
+                    candidate["p2p_amplitude"] <= upper_multiplier * p2p["upper"]
+                    and candidate["prominence"] <= upper_multiplier * prominence["upper"]
+                )
             if label == "mr":
                 amplitude = component["metrics"]["absolute_peak_amplitude"]
                 significant &= candidate["absolute_peak_amplitude"] >= fraction * amplitude["median"]

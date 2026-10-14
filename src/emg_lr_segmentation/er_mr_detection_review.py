@@ -1,4 +1,5 @@
 """Notebook 4 ER/MR detection and editable review workflow."""
+import copy
 import json
 from pathlib import Path
 
@@ -8,6 +9,7 @@ import pandas as pd
 from scipy.signal import find_peaks
 
 from .manual_calibrated_er_mr_lr import (
+    CALIBRATION_METRICS,
     _baseline,
     _candidate_metrics,
     _component_candidates,
@@ -15,6 +17,7 @@ from .manual_calibrated_er_mr_lr import (
     atomic_save_annotations,
     candidates_to_annotations,
     extract_annotation_metrics,
+    robust_center_scale,
 )
 
 # Keep the calibrated ER/MR detector's original baseline convention.
@@ -25,7 +28,7 @@ TEMPLATE_PLOT_COUNT = 10
 
 
 def detect_er_mr(raw, stimulus_times_s, calibration, channel):
-    """Reuse calibrated candidates and ER→MR selection without requiring LR."""
+    """Detect ER/MR independently, then enforce the ER-before-MR hierarchy."""
     signal = raw.get_data(picks=[channel])[0]
     sfreq = float(raw.info["sfreq"])
     records = []
@@ -41,11 +44,11 @@ def detect_er_mr(raw, stimulus_times_s, calibration, channel):
         if not options["er"]:
             continue
         er = options["er"][0]
-        gap = calibration["sequence"].get("er_to_mr_ms", {})
+        # ER and MR are first detected from their own fixed calibration windows.
+        # The sequence is applied only afterwards: MR requires an earlier ER.
         mr_options = [
             row for row in options["mr"]
-            if row["peak_latency_ms"] > er["peak_latency_ms"]
-            and (not gap or gap["lower"] <= row["peak_latency_ms"] - er["peak_latency_ms"] <= gap["upper"])
+            if row["start_latency_ms"] >= er["end_latency_ms"]
         ]
         for candidate in [er, *mr_options[:1]]:
             record = dict(candidate)
@@ -57,10 +60,105 @@ def detect_er_mr(raw, stimulus_times_s, calibration, channel):
     ])
 
 
-def mark_er_mr(raw, source_annotations, stimulus_times_s, channel, project_root):
+def retune_er_mr_calibration(
+    reviewed_metrics,
+    base_calibration,
+    lower_quantile=0.05,
+    upper_quantile=0.95,
+):
+    """Retune ER/MR from reviewed spans while preserving the LR calibration.
+
+    Medians and scaled MADs remain the candidate-scoring targets. Empirical
+    quantiles define the search ranges, and high-amplitude responses are not
+    rejected merely for exceeding a symmetric upper amplitude bound.
+    """
+    if not 0 <= lower_quantile < upper_quantile <= 1:
+        raise ValueError("Calibration quantiles must satisfy 0 <= lower < upper <= 1")
+    required = {"label", "polarity", "stimulus_index", *CALIBRATION_METRICS}
+    missing = required - set(reviewed_metrics.columns)
+    if missing:
+        raise ValueError(f"Reviewed ER/MR metrics are missing columns: {sorted(missing)}")
+
+    calibration = copy.deepcopy(base_calibration)
+    summary_rows = []
+    for label in ("er", "mr"):
+        group = reviewed_metrics.loc[reviewed_metrics["label"].eq(label)].copy()
+        if group.empty:
+            raise ValueError(f"No reviewed {label.upper()} metrics are available")
+        polarity = int(group["polarity"].mode().iloc[0])
+        component = {"polarity": polarity, "n": int(len(group)), "metrics": {}}
+        for metric in CALIBRATION_METRICS:
+            values = pd.to_numeric(group[metric], errors="coerce").dropna()
+            if values.empty:
+                raise ValueError(f"No finite {label.upper()} values for {metric}")
+            median, scaled_mad = robust_center_scale(values)
+            lower = float(values.quantile(lower_quantile))
+            upper = float(values.quantile(upper_quantile))
+            if metric not in {"start_latency_ms", "peak_latency_ms", "end_latency_ms"}:
+                lower = max(0.0, lower)
+            component["metrics"][metric] = {
+                "median": median,
+                "scaled_mad": scaled_mad,
+                "lower": lower,
+                "upper": upper,
+            }
+            summary_rows.append({
+                "label": label,
+                "metric": metric,
+                "n": len(values),
+                "median": median,
+                "scaled_mad": scaled_mad,
+                "lower": lower,
+                "upper": upper,
+            })
+        calibration["components"][label] = component
+
+    peak_latencies = reviewed_metrics.pivot_table(
+        index="stimulus_index",
+        columns="label",
+        values="peak_latency_ms",
+        aggfunc="first",
+    ).dropna(subset=["er", "mr"])
+    er_to_mr = peak_latencies["mr"] - peak_latencies["er"]
+    if er_to_mr.empty:
+        raise ValueError("No complete reviewed ER/MR pairs are available")
+    gap_median, gap_scale = robust_center_scale(er_to_mr)
+    calibration.setdefault("sequence", {})["er_to_mr_ms"] = {
+        "median": gap_median,
+        "scaled_mad": gap_scale,
+        "lower": max(0.0, float(er_to_mr.quantile(lower_quantile))),
+        "upper": float(er_to_mr.quantile(upper_quantile)),
+    }
+
+    eligibility = calibration.setdefault("eligibility", {})
+    eligibility.setdefault("minimum_median_fraction", {"er": 0.20, "mr": 0.25, "lr": 0.20})
+    # Large genuine responses are common in the reviewed data. Keep only the
+    # lower significance gates for this retuned calibration.
+    eligibility["maximum_robust_upper_multiplier"] = None
+    calibration["er_mr_retuning"] = {
+        "method": "reviewed_median_scaled_mad_with_empirical_quantile_ranges",
+        "lower_quantile": float(lower_quantile),
+        "upper_quantile": float(upper_quantile),
+        "complete_pair_count": int(len(peak_latencies)),
+    }
+    return calibration, pd.DataFrame(summary_rows)
+
+
+def mark_er_mr(
+    raw,
+    source_annotations,
+    stimulus_times_s,
+    channel,
+    project_root,
+    calibration_path=None,
+):
     """Save new annotations/metrics without touching previous pipeline files."""
     root = Path(project_root)
-    calibration_path = root / "outputs/metrics/manual_er_mr_lr_calibration.json"
+    calibration_path = (
+        Path(calibration_path)
+        if calibration_path is not None
+        else root / "outputs/metrics/manual_er_mr_lr_calibration.json"
+    )
     with calibration_path.open() as stream:
         calibration = json.load(stream)
     candidates = detect_er_mr(raw, stimulus_times_s, calibration, channel)
@@ -148,8 +246,8 @@ def keep_complete_er_mr_epochs(annotations):
     return complete, pd.DataFrame(status)
 
 
-def keep_mr_and_paired_er(annotations):
-    """Keep every MR, but retain ER only when the same stimulus has an MR."""
+def keep_er_and_paired_mr(annotations):
+    """Keep every ER, but retain MR only when the same stimulus has an ER."""
     descriptions = np.asarray(annotations.description, dtype=str)
     stimuli = annotations[descriptions == "Stimulus_Auto"]
     responses = annotations[np.isin(descriptions, ["er_auto", "mr_auto"])]
@@ -157,16 +255,16 @@ def keep_mr_and_paired_er(annotations):
     response_stimulus_indices = np.searchsorted(
         stimulus_times_s, np.asarray(responses.onset, dtype=float), side="right"
     ) - 1
-    mr_stimulus_indices = {
+    er_stimulus_indices = {
         int(stimulus_index)
         for stimulus_index, label in zip(
             response_stimulus_indices, responses.description
         )
-        if stimulus_index >= 0 and str(label) == "mr_auto"
+        if stimulus_index >= 0 and str(label) == "er_auto"
     }
     keep_response = np.asarray(
         [
-            str(label) == "mr_auto" or int(stimulus_index) in mr_stimulus_indices
+            str(label) == "er_auto" or int(stimulus_index) in er_stimulus_indices
             for stimulus_index, label in zip(
                 response_stimulus_indices, responses.description
             )
@@ -176,7 +274,43 @@ def keep_mr_and_paired_er(annotations):
     return stimuli + responses[keep_response]
 
 
-def review_er_mr(raw, auto_annotations, channel, project_root, start_s=0):
+def keep_mr_and_paired_er(annotations):
+    """Backward-compatible alias for the corrected ER-first constraint."""
+    return keep_er_and_paired_mr(annotations)
+
+
+def keep_lr_in_complete_er_mr_epochs(complete_annotations, lr_annotations):
+    """Retain LR spans only in stimulus epochs containing both ER and MR."""
+    normalized_complete, epoch_status = keep_complete_er_mr_epochs(complete_annotations)
+    complete_indices = set(
+        epoch_status.loc[epoch_status["complete_er_mr"], "stimulus_index"].astype(int)
+    )
+    descriptions = np.asarray(normalized_complete.description, dtype=str)
+    stimulus_times_s = np.asarray(
+        normalized_complete.onset[descriptions == "Stimulus_Auto"], dtype=float
+    )
+    lr_descriptions = np.asarray(lr_annotations.description, dtype=str)
+    lr_only = lr_annotations[lr_descriptions == "lr_auto"]
+    if not len(lr_only) or not len(stimulus_times_s):
+        return lr_only
+    lr_stimulus_indices = np.searchsorted(
+        stimulus_times_s, np.asarray(lr_only.onset, dtype=float), side="right"
+    ) - 1
+    keep = np.asarray(
+        [int(index) in complete_indices for index in lr_stimulus_indices],
+        dtype=bool,
+    )
+    return lr_only[keep]
+
+
+def review_er_mr(
+    raw,
+    auto_annotations,
+    channel,
+    project_root,
+    start_s=0,
+    seed_from_saved_review=True,
+):
     """Edit responses, verify persistence, and retain complete ER+MR epochs."""
     root = Path(project_root)
     output_path = root / "outputs/annotations/notebook4_er_mr_reviewed-annot.fif"
@@ -184,8 +318,12 @@ def review_er_mr(raw, auto_annotations, channel, project_root, start_s=0):
     metrics_path = root / "outputs/metrics/notebook4_er_mr_reviewed.csv"
     status_path = root / "outputs/metrics/notebook4_er_mr_epoch_status.csv"
     response_labels = {"er_auto", "mr_auto"}
-    previous = mne.read_annotations(output_path) if output_path.exists() else auto_annotations
-    previous = keep_mr_and_paired_er(previous)
+    previous = (
+        mne.read_annotations(output_path)
+        if seed_from_saved_review and output_path.exists()
+        else auto_annotations
+    )
+    previous = keep_er_and_paired_mr(previous)
     previous_responses = previous[np.isin(previous.description, list(response_labels))]
     stimuli = auto_annotations[np.asarray(auto_annotations.description) == "Stimulus_Auto"]
     review_raw = raw.copy()
@@ -197,8 +335,8 @@ def review_er_mr(raw, auto_annotations, channel, project_root, start_s=0):
                    title="Editable ER/MR review")
     edited = review_raw.annotations
     responses = edited[np.isin(edited.description, list(response_labels))]
-    # Preserve all MR edits, but never save ER in an epoch without MR.
-    reviewed = keep_mr_and_paired_er(stimuli + responses)
+    # ER may exist alone, but MR is valid only when the same epoch contains ER.
+    reviewed = keep_er_and_paired_mr(stimuli + responses)
     atomic_save_annotations(reviewed, output_path)
     saved_reviewed = mne.read_annotations(output_path)
     _verify_saved_responses(reviewed, saved_reviewed, raw.info["sfreq"])
@@ -224,18 +362,51 @@ def find_lr_candidates(
     search_config,
     project_root,
 ):
-    """Find every calibrated-polarity peak between MR end and the LR window end."""
+    """Detect duration-capped LR from the MR right edge in complete epochs."""
     start_offset_ms = float(search_config["start_after_mr_end_ms"])
     search_end_ms = float(search_config["end_after_stimulus_ms"])
     p2p_min = float(search_config["p2p_min_native"])
     if start_offset_ms < 0 or search_end_ms <= 0 or p2p_min < 0:
-        raise ValueError("LR search-window limits must be positive")
+        raise ValueError(
+            "LR start offset and P2P minimum must be non-negative; search end "
+            "must be positive"
+        )
 
     root = Path(project_root)
+    configured_max_duration = search_config.get("max_duration_ms")
+    if configured_max_duration is None:
+        manual_metrics_path = root / "outputs/metrics/manual_er_mr_lr_metrics.csv"
+        if not manual_metrics_path.exists():
+            raise FileNotFoundError(manual_metrics_path)
+        manual_metrics = pd.read_csv(manual_metrics_path)
+        manual_lr_durations = pd.to_numeric(
+            manual_metrics.loc[manual_metrics["label"].eq("lr"), "duration_ms"],
+            errors="coerce",
+        ).dropna()
+        if manual_lr_durations.empty:
+            raise ValueError("No manually annotated LR durations are available")
+        max_duration_ms = float(manual_lr_durations.max())
+    else:
+        max_duration_ms = float(configured_max_duration)
+    if max_duration_ms <= 0:
+        raise ValueError("LR maximum duration must be positive")
+
     with (root / "outputs/metrics/manual_er_mr_lr_calibration.json").open() as stream:
         calibration = json.load(stream)
     lr_component = calibration["components"]["lr"]
     polarity = int(lr_component["polarity"])
+    lr_latency = lr_component["metrics"]["peak_latency_ms"]
+    calibration_peak_lower_ms = float(lr_latency["lower"])
+    stable_end_ms = min(float(lr_latency["upper"]), search_end_ms)
+    if stable_end_ms <= 0:
+        raise ValueError("The LR search end is not positive")
+
+    complete_annotations, epoch_status = keep_complete_er_mr_epochs(
+        complete_annotations
+    )
+    complete_indices = set(
+        epoch_status.loc[epoch_status["complete_er_mr"], "stimulus_index"].astype(int)
+    )
 
     signal = raw.get_data(picks=[channel])[0]
     sfreq = float(raw.info["sfreq"])
@@ -261,7 +432,7 @@ def find_lr_candidates(
         stimulus_times_s, er_onsets, side="right"
     ) - 1
     invalid_order = []
-    for stimulus_index in sorted(set(mr_stimulus_indices.astype(int))):
+    for stimulus_index in sorted(complete_indices):
         epoch_er_ends = er_ends[er_stimulus_indices == stimulus_index]
         epoch_mr_onsets = mr_onsets[mr_stimulus_indices == stimulus_index]
         if (
@@ -276,15 +447,22 @@ def find_lr_candidates(
             f"fix stimulus indices {invalid_order}"
         )
 
+    mr_end_by_stimulus = {
+        int(stimulus_index): float(np.max(mr_ends[mr_stimulus_indices == stimulus_index]))
+        for stimulus_index in complete_indices
+    }
+
     records = []
-    for stimulus_index in sorted(set(mr_stimulus_indices.astype(int))):
-        if stimulus_index < 0:
-            continue
+    max_duration_samples = max(
+        2, int(np.floor(max_duration_ms / 1000 * sfreq))
+    )
+    for stimulus_index in sorted(complete_indices):
         stimulus_time_s = float(stimulus_times_s[stimulus_index])
-        epoch_mr_ends = mr_ends[mr_stimulus_indices == stimulus_index]
-        mr_end_s = float(np.max(epoch_mr_ends))
+        mr_end_s = mr_end_by_stimulus[stimulus_index]
+        # LR is allowed to begin at the first sample on or after the MR right
+        # boundary; there is deliberately no positive ER/MR-to-LR dead zone.
         search_start_s = mr_end_s + start_offset_ms / 1000
-        search_stop_s = stimulus_time_s + search_end_ms / 1000
+        search_stop_s = stimulus_time_s + stable_end_ms / 1000
         i0 = max(0, int(np.ceil(search_start_s * sfreq)))
         i1 = min(len(signal) - 1, int(np.floor(search_stop_s * sfreq)))
         if i1 <= i0 + 2:
@@ -303,6 +481,26 @@ def find_lr_candidates(
             _, _, left_ip, right_ip = _peak_shape(oriented, int(local_peak))
             left_i = max(i0, int(np.floor(i0 + left_ip)))
             right_i = min(i1, int(np.ceil(i0 + right_ip)))
+            raw_duration_samples = right_i - left_i
+            duration_was_capped = raw_duration_samples > max_duration_samples
+            if duration_was_capped:
+                left_extent = peak_i - left_i
+                right_extent = right_i - peak_i
+                total_extent = left_extent + right_extent
+                left_keep = int(round(max_duration_samples * left_extent / total_extent))
+                left_keep = min(left_extent, max(1, left_keep))
+                right_keep = min(
+                    right_extent,
+                    max(1, max_duration_samples - left_keep),
+                )
+                remaining = max_duration_samples - left_keep - right_keep
+                if remaining > 0:
+                    add_left = min(remaining, left_extent - left_keep)
+                    left_keep += add_left
+                    remaining -= add_left
+                    right_keep += min(remaining, right_extent - right_keep)
+                left_i = peak_i - left_keep
+                right_i = peak_i + right_keep
             if right_i <= left_i:
                 continue
             candidate = _candidate_metrics(
@@ -323,9 +521,11 @@ def find_lr_candidates(
                     "label": "lr",
                     "candidate_rank": candidate_rank,
                     "polarity": polarity,
-                    "mr_end_latency_ms": (mr_end_s - stimulus_time_s) * 1000,
-                    "search_start_ms": (i0 / sfreq - stimulus_time_s) * 1000,
-                    "search_end_ms": (i1 / sfreq - stimulus_time_s) * 1000,
+                    "calibration_peak_latency_lower_ms": calibration_peak_lower_ms,
+                    "stable_search_end_ms": stable_end_ms,
+                    "actual_search_start_ms": (i0 / sfreq - stimulus_time_s) * 1000,
+                    "lr_max_duration_ms": max_duration_ms,
+                    "duration_was_capped": duration_was_capped,
                     "p2p_min_native": p2p_min,
                     "p2p_pass": candidate["p2p_amplitude"] >= p2p_min,
                     "auto_label": "lr_auto",
@@ -335,6 +535,18 @@ def find_lr_candidates(
 
     candidates = pd.DataFrame(records)
     if not candidates.empty:
+        candidates["mr_end_latency_ms"] = candidates["stimulus_index"].map(
+            {
+                index: (mr_end_s - stimulus_times_s[index]) * 1000
+                for index, mr_end_s in mr_end_by_stimulus.items()
+            }
+        )
+        candidates["start_after_mr_end_ms"] = (
+            candidates["start_latency_ms"] - candidates["mr_end_latency_ms"]
+        )
+        candidates = candidates.loc[
+            candidates["start_after_mr_end_ms"] >= start_offset_ms
+        ].copy()
         candidates = candidates.sort_values(
             ["stimulus_index", "peak_latency_ms"], ignore_index=True
         )
@@ -354,28 +566,77 @@ def review_lr_and_tune_search(
     channel,
     project_root,
     start_s=0,
+    seed_from_saved_review=True,
 ):
-    """Review P2P-accepted LR spans and summarize the reviewed search limits."""
+    """Review LR spans from complete ER+MR epochs and summarize search limits."""
     root = Path(project_root)
     auto_path = root / "outputs/annotations/notebook4_lr_auto-annot.fif"
     reviewed_path = root / "outputs/annotations/notebook4_lr_reviewed-annot.fif"
     metrics_path = root / "outputs/metrics/notebook4_lr_reviewed.csv"
     tuning_path = root / "outputs/metrics/notebook4_lr_search_tuning.csv"
 
-    accepted = candidates.loc[candidates["p2p_pass"]].copy()
+    complete_annotations, epoch_status = keep_complete_er_mr_epochs(
+        complete_annotations
+    )
+    complete_indices = set(
+        epoch_status.loc[epoch_status["complete_er_mr"], "stimulus_index"].astype(int)
+    )
+    accepted = candidates.loc[
+        candidates["p2p_pass"]
+        & candidates["stimulus_index"].astype(int).isin(complete_indices)
+    ].copy()
     auto_lr = candidates_to_annotations(accepted, complete_annotations.orig_time)
     automatic = complete_annotations + auto_lr
     atomic_save_annotations(automatic, auto_path)
 
-    if reviewed_path.exists():
+    if seed_from_saved_review and reviewed_path.exists():
         previous = mne.read_annotations(reviewed_path)
-        previous_lr = previous[
-            np.asarray(previous.description, dtype=str) == "lr_auto"
+        previous_lr_count = int(
+            np.sum(np.asarray(previous.description, dtype=str) == "lr_auto")
+        )
+        previous_lr = keep_lr_in_complete_er_mr_epochs(
+            complete_annotations, previous
+        )
+        removed_previous_lr = previous_lr_count - len(previous_lr)
+        if removed_previous_lr:
+            print(
+                "Excluded saved LR spans outside current complete ER+MR epochs:",
+                removed_previous_lr,
+            )
+        descriptions = np.asarray(complete_annotations.description, dtype=str)
+        stimulus_times_s = np.asarray(
+            complete_annotations.onset[descriptions == "Stimulus_Auto"], dtype=float
+        )
+        previous_indices = set(
+            np.searchsorted(
+                stimulus_times_s,
+                np.asarray(previous_lr.onset, dtype=float),
+                side="right",
+            ).astype(int)
+            - 1
+        )
+        auto_indices = np.searchsorted(
+            stimulus_times_s,
+            np.asarray(auto_lr.onset, dtype=float),
+            side="right",
+        ) - 1
+        auto_for_unreviewed_epochs = auto_lr[
+            np.asarray(
+                [int(index) not in previous_indices for index in auto_indices],
+                dtype=bool,
+            )
         ]
+        review_lr_seed = previous_lr + auto_for_unreviewed_epochs
+        print(
+            "LR review seed: saved valid =",
+            len(previous_lr),
+            "; auto in not-yet-reviewed complete epochs =",
+            len(auto_for_unreviewed_epochs),
+        )
     else:
-        previous_lr = auto_lr
+        review_lr_seed = auto_lr
     review_raw = raw.copy()
-    review_raw.set_annotations(complete_annotations + previous_lr)
+    review_raw.set_annotations(complete_annotations + review_lr_seed)
     print("Edit, add, split, merge, or delete lr_auto spans. Close the window to save.")
     mne.viz.set_browser_backend("qt")
     review_raw.plot(
@@ -387,7 +648,18 @@ def review_lr_and_tune_search(
     )
 
     edited = review_raw.annotations
-    reviewed_lr = edited[np.asarray(edited.description, dtype=str) == "lr_auto"]
+    edited_lr_count = int(
+        np.sum(np.asarray(edited.description, dtype=str) == "lr_auto")
+    )
+    reviewed_lr = keep_lr_in_complete_er_mr_epochs(
+        complete_annotations, edited
+    )
+    removed_edited_lr = edited_lr_count - len(reviewed_lr)
+    if removed_edited_lr:
+        print(
+            "Excluded edited LR spans outside current complete ER+MR epochs:",
+            removed_edited_lr,
+        )
     reviewed = complete_annotations + reviewed_lr
     atomic_save_annotations(reviewed, reviewed_path)
     saved = mne.read_annotations(reviewed_path)

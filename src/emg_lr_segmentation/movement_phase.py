@@ -673,48 +673,79 @@ def plot_10_epochs_by_phase(
     time_s,
     sfreq,
     n_plots=10,
+    plots_per_figure=5,
     component_colors=DEFAULT_COMPONENT_COLORS,
 ):
-    """Plot up to ten LR-containing epochs with phase and metric annotations."""
+    """Plot LR-containing epochs in figures containing up to five epochs each."""
+    if plots_per_figure < 1:
+        raise ValueError("plots_per_figure must be at least 1")
     rank_df = response_by_stim.loc[response_by_stim["late_present"]].copy()
     if rank_df.empty:
-        return None, rank_df
+        return [], rank_df
     rank_df["latency_rank"] = rank_df["late_latency_outlier"].astype(int) if "late_latency_outlier" in rank_df else 0
     sort_cols = ["latency_rank", "late_prominence", "late_absolute_peak_amplitude"]
     sort_cols = [col for col in sort_cols if col in rank_df.columns]
     rank_df = rank_df.sort_values(sort_cols, ascending=[False] * len(sort_cols)).head(n_plots)
 
-    fig, axes = plt.subplots(len(rank_df), 1, figsize=(10, max(2.0 * len(rank_df), 4)), sharex=True, squeeze=False)
-    axes = axes[:, 0]
-    for plot_i, (_, stim_row) in enumerate(rank_df.iterrows()):
-        ax = axes[plot_i]
-        stim_s = float(stim_row["stimulus_time_s"])
-        stim_idx = int(stim_row["stimulus_index"])
-        rows = phase_response_metrics.loc[phase_response_metrics["stimulus_index"].eq(stim_idx)].sort_values(["start_s", "label"])
-        right_ms = max(70.0, float(rows["end_latency_ms"].max()) + 8.0 if len(rows) else 70.0)
-        left_s = max(0.0, stim_s - 0.005)
-        right_s = min(time_s[-1], stim_s + right_ms / 1000.0)
-        mask = (time_s >= left_s) & (time_s <= right_s)
-        x_ms = (time_s[mask] - stim_s) * 1000
-        ax.plot(x_ms, raw_emg[mask], color="black", linewidth=0.9)
-        ax.axvline(0, color="black", linestyle=":", linewidth=0.8)
-        for response in rows.itertuples():
-            color = component_colors.get(str(response.label), "0.5")
-            label = str(response.label).upper() if plot_i == 0 else None
-            ax.axvspan(float(response.start_latency_ms), float(response.end_latency_ms), color=color, alpha=0.18, label=label)
-            ax.axvline(float(response.peak_latency_ms), color=color, linewidth=0.8, alpha=0.9)
-        outlier_mark = " | latency outlier" if bool(stim_row.get("late_latency_outlier", False)) else ""
-        ax.set_title(
-            f"stim {stim_idx} | bin {stim_row['phase_bin']} | phase {stim_row['movement_phase']:.2f} | "
-            f"M p2p {stim_row.get('middle_p2p_amplitude', np.nan):.3g} | LR p2p {stim_row.get('late_p2p_amplitude', np.nan):.3g} | "
-            f"LR lat {stim_row.get('late_peak_latency_ms', np.nan):.1f} ms{outlier_mark}",
-            loc="left",
-            fontsize=8,
+    figures = []
+    for figure_start in range(0, len(rank_df), plots_per_figure):
+        figure_rows = rank_df.iloc[figure_start : figure_start + plots_per_figure]
+        fig, axes = plt.subplots(
+            len(figure_rows), 1,
+            figsize=(10, max(2.0 * len(figure_rows), 4)),
+            sharex=True, squeeze=False,
         )
-        ax.grid(alpha=0.25, linestyle=":")
-    axes[-1].set_xlabel("Time after stimulus, ms")
-    axes[0].legend(loc="upper right", ncols=3)
-    fig.text(0.02, 0.5, "Amplitude, native", rotation="vertical", va="center")
-    fig.suptitle("Ten LR-containing epochs: waveform check for phase and latency")
-    plt.tight_layout(rect=[0.04, 0.02, 1, 0.96])
-    return fig, rank_df
+        axes = axes[:, 0]
+        for plot_i, (_, stim_row) in enumerate(figure_rows.iterrows()):
+            ax = axes[plot_i]
+            stim_s = float(stim_row["stimulus_time_s"])
+            stim_idx = int(stim_row["stimulus_index"])
+            rows = phase_response_metrics.loc[
+                phase_response_metrics["stimulus_index"].eq(stim_idx)
+            ].sort_values(["start_s", "label"])
+            right_ms = max(
+                70.0,
+                float(rows["end_latency_ms"].max()) + 8.0 if len(rows) else 70.0,
+            )
+            left_s = max(0.0, stim_s - 0.005)
+            right_s = min(time_s[-1], stim_s + right_ms / 1000.0)
+            mask = (time_s >= left_s) & (time_s <= right_s)
+            x_ms = (time_s[mask] - stim_s) * 1000
+            ax.plot(x_ms, raw_emg[mask], color="black", linewidth=0.9)
+            ax.axvline(0, color="black", linestyle=":", linewidth=0.8)
+            for response in rows.itertuples():
+                color = component_colors.get(str(response.label), "0.5")
+                label = str(response.label).upper() if plot_i == 0 else None
+                ax.axvspan(
+                    float(response.start_latency_ms),
+                    float(response.end_latency_ms),
+                    color=color, alpha=0.18, label=label,
+                )
+                ax.axvline(
+                    float(response.peak_latency_ms),
+                    color=color, linewidth=0.8, alpha=0.9,
+                )
+            outlier_mark = (
+                " | latency outlier"
+                if bool(stim_row.get("late_latency_outlier", False)) else ""
+            )
+            ax.set_title(
+                f"stim {stim_idx} | bin {stim_row['phase_bin']} | phase {stim_row['movement_phase']:.2f} | "
+                f"M p2p {stim_row.get('middle_p2p_amplitude', np.nan):.3g} | "
+                f"LR p2p {stim_row.get('late_p2p_amplitude', np.nan):.3g} | "
+                f"LR lat {stim_row.get('late_peak_latency_ms', np.nan):.1f} ms{outlier_mark}",
+                loc="left", fontsize=8,
+            )
+            ax.grid(alpha=0.25, linestyle=":")
+        axes[-1].set_xlabel("Time after stimulus, ms")
+        axes[0].legend(loc="upper right", ncols=3)
+        fig.text(0.02, 0.5, "Amplitude, native", rotation="vertical", va="center")
+        first_number = figure_start + 1
+        last_number = figure_start + len(figure_rows)
+        fig.suptitle(
+            f"LR-containing epochs {first_number}-{last_number} of {len(rank_df)}: "
+            "waveform check for phase and latency"
+        )
+        fig.tight_layout(rect=[0.04, 0.02, 1, 0.96])
+        figures.append(fig)
+    return figures, rank_df

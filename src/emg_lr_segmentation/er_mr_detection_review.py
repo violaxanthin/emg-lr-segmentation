@@ -28,19 +28,33 @@ TEMPLATE_PLOT_COUNT = 10
 
 
 def detect_er_mr(raw, stimulus_times_s, calibration, channel):
-    """Detect ER/MR independently, then enforce the ER-before-MR hierarchy."""
+    """Detect ER/MR with strict raw-signal polarity and ER-before-MR order."""
     signal = raw.get_data(picks=[channel])[0]
     sfreq = float(raw.info["sfreq"])
     records = []
     for stimulus_index, stim_s in enumerate(stimulus_times_s):
-        options = {
-            label: _component_candidates(
+        options = {}
+        for label in ("er", "mr"):
+            candidates = _component_candidates(
                 signal, sfreq, float(stim_s), label,
                 calibration["components"][label], ER_MR_BASELINE_MS,
                 calibration.get("eligibility"),
             )
-            for label in ("er", "mr")
-        }
+            expected_raw_sign = 1 if label == "er" else -1
+            for candidate in candidates:
+                raw_peak_amplitude = (
+                    candidate["baseline_median"]
+                    + candidate["signed_peak_amplitude"]
+                )
+                candidate["raw_peak_amplitude"] = raw_peak_amplitude
+                candidate["absolute_polarity_pass"] = bool(
+                    expected_raw_sign * raw_peak_amplitude > 0
+                )
+            options[label] = [
+                candidate
+                for candidate in candidates
+                if candidate["absolute_polarity_pass"]
+            ]
         if not options["er"]:
             continue
         er = options["er"][0]
@@ -49,6 +63,7 @@ def detect_er_mr(raw, stimulus_times_s, calibration, channel):
         mr_options = [
             row for row in options["mr"]
             if row["start_latency_ms"] >= er["end_latency_ms"]
+            and row["raw_peak_amplitude"] < er["raw_peak_amplitude"]
         ]
         for candidate in [er, *mr_options[:1]]:
             record = dict(candidate)

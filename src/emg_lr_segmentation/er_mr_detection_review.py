@@ -23,8 +23,9 @@ from .manual_calibrated_er_mr_lr import (
 # Keep the calibrated ER/MR detector's original baseline convention.
 ER_MR_BASELINE_MS = (-25.0, -5.0)
 REVIEW_DURATION_S = 5.0
-REVIEW_SCALING = 5.16987885
-TEMPLATE_PLOT_COUNT = 10
+# Display-only MNE browser range: approximately +/- 5.2 native signal units.
+# This does not change the recorded data or any detector threshold.
+EMG_REVIEW_DISPLAY_RANGE_NATIVE = 5.2
 
 
 def detect_er_mr(raw, stimulus_times_s, calibration, channel):
@@ -346,7 +347,7 @@ def review_er_mr(
     print("Edit, add, or delete er_auto/mr_auto spans. Close the window to save.")
     mne.viz.set_browser_backend("qt")
     review_raw.plot(start=start_s, duration=REVIEW_DURATION_S,
-                   scalings={"emg": REVIEW_SCALING}, block=True,
+                   scalings={"emg": EMG_REVIEW_DISPLAY_RANGE_NATIVE}, block=True,
                    title="Editable ER/MR review")
     edited = review_raw.annotations
     responses = edited[np.isin(edited.description, list(response_labels))]
@@ -657,7 +658,7 @@ def review_lr_and_tune_search(
     review_raw.plot(
         start=start_s,
         duration=REVIEW_DURATION_S,
-        scalings={"emg": REVIEW_SCALING},
+        scalings={"emg": EMG_REVIEW_DISPLAY_RANGE_NATIVE},
         block=True,
         title="Editable LR review and search tuning",
     )

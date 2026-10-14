@@ -650,7 +650,13 @@ def candidates_to_annotations(candidates, orig_time=None):
     )
 
 
-def review_annotations(raw, source_annotations, candidates, browser_scaling, block=True):
+def review_annotations(
+    raw,
+    source_annotations,
+    candidates,
+    emg_display_range_native,
+    block=True,
+):
     """Open a review-only copy; the returned annotations contain user edits."""
     descriptions = np.asarray(source_annotations.description, dtype=str)
     keep = (descriptions == "Stimulus_Auto") | np.char.startswith(descriptions, "BAD") | np.char.startswith(descriptions, "EDGE")
@@ -662,7 +668,7 @@ def review_annotations(raw, source_annotations, candidates, browser_scaling, blo
         start=max(0.0, first - 0.1),
         duration=5.0,
         n_channels=len(raw.ch_names),
-        scalings={"emg": browser_scaling},
+        scalings={"emg": emg_display_range_native},
         title="Manual-calibrated ER/MR/LR review — edit lowercase *_auto spans",
         block=block,
     )
